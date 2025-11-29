@@ -1,47 +1,33 @@
-# Base image with Apache + PHP
-FROM php:8.2-apache
+# Use PHP CLI for built-in server
+FROM php:8.2-cli
 
-# Set working directory
-WORKDIR /var/www/html
-
-# Install dependencies
-RUN apt-get update && \
-    apt-get install -y \
-    poppler-utils \   # for pdftotext
-    unzip \
-    git && \
-    rm -rf /var/lib/apt/lists/*
-
-# Enable Apache mod_rewrite
-RUN a2enmod rewrite
+# Install system dependencies
+RUN apt-get update && apt-get install -y git unzip && rm -rf /var/lib/apt/lists/*
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Copy composer files first
+# Set working directory
+WORKDIR /app
+
+# Copy composer files first for caching
 COPY composer.json composer.lock ./
 
-# Install PHP dependencies
+# Install dependencies inside container
 RUN composer install --no-dev --optimize-autoloader --no-scripts
 
-# Copy the rest of your app
+# Copy all app files
 COPY . .
 
-# Fix permissions
-RUN chown -R www-data:www-data /var/www/html
+# Create uploads folder with correct permissions
+RUN mkdir -p /app/uploads && chmod 777 /app/uploads
 
-# Expose port
-EXPOSE 80
-# send PHP errors to stdout → Render “Logs” tab
-RUN echo 'error_log = /dev/stderr' >> /usr/local/etc/php/conf.d/docker-php-log.ini
+# Ensure PHP can read files
+RUN find /app -type d -exec chmod 755 {} \; \
+    && find /app -type f -exec chmod 644 {} \;
 
-# 1. PHP errors → stdout (appears in Render Logs)
-RUN echo 'error_log = /dev/stderr' >> /usr/local/etc/php/conf.d/docker-php-log.ini
+# Expose Render port
+EXPOSE $PORT
 
-# 2. Apache error log → stdout
-RUN ln -sf /dev/stderr /var/log/apache2/error.log
-
-# 3. Apache access log → stdout (optional, lets you see every hit)
-RUN ln -sf /dev/stdout /var/log/apache2/access.log
-# Start Apache
-CMD ["apache2-foreground"]
+# Start PHP built-in server
+CMD php -S 0.0.0.0:$PORT -t . router.php
